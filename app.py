@@ -607,7 +607,7 @@ HTML_TEMPLATE = '''
 '''
 
 class PowerfullWebCloner:
-    def __init__(self, target_url, base_path="/storage/emulated/0/NIROB-WEB-COPY"):
+    def __init__(self, target_url, base_path="/tmp/NIROB-WEB-COPY"):
         self.target_url = target_url
         self.domain = urlparse(target_url).netloc.replace('.', '_').replace('-', '_')
         self.base_path = Path(base_path) / self.domain
@@ -647,7 +647,6 @@ class PowerfullWebCloner:
         """Fetch URL with retry logic"""
         for attempt in range(max_retries):
             try:
-                # Add random delay between retries
                 if attempt > 0:
                     time.sleep(1 * attempt)
                 
@@ -655,7 +654,6 @@ class PowerfullWebCloner:
                 if response.status_code == 200:
                     return response.text
                 elif response.status_code == 403:
-                    # Try with different headers
                     session.headers['User-Agent'] = random.choice([
                         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                         'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
@@ -673,7 +671,6 @@ class PowerfullWebCloner:
         soup = BeautifulSoup(html, 'html.parser')
         resources = {'css': [], 'js': []}
         
-        # Extract CSS files
         for link in soup.find_all('link', rel='stylesheet'):
             href = link.get('href')
             if href:
@@ -681,7 +678,6 @@ class PowerfullWebCloner:
                 if not full_url.startswith('data:'):
                     resources['css'].append(full_url)
         
-        # Extract JS files
         for script in soup.find_all('script', src=True):
             src = script.get('src')
             if src:
@@ -689,23 +685,23 @@ class PowerfullWebCloner:
                 if not full_url.startswith('data:'):
                     resources['js'].append(full_url)
         
-        # Extract inline styles
         style_tags = soup.find_all('style')
         for idx, style in enumerate(style_tags):
             if style.string:
                 inline_css = style.string
                 css_path = self.base_path / 'css' / f'inline_{idx}.css'
+                css_path.parent.mkdir(parents=True, exist_ok=True)
                 with open(css_path, 'w', encoding='utf-8') as f:
                     f.write(inline_css)
                 self.stats['css'] += 1
                 self.files.append({'name': f'inline_{idx}.css', 'path': str(css_path), 'type': 'css'})
         
-        # Extract inline scripts
         script_tags = soup.find_all('script', src=False)
         for idx, script in enumerate(script_tags):
             if script.string:
                 inline_js = script.string
                 js_path = self.base_path / 'js' / f'inline_{idx}.js'
+                js_path.parent.mkdir(parents=True, exist_ok=True)
                 with open(js_path, 'w', encoding='utf-8') as f:
                     f.write(inline_js)
                 self.stats['js'] += 1
@@ -718,13 +714,11 @@ class PowerfullWebCloner:
         try:
             content = self.fetch_with_retry(url, session)
             if content:
-                # Determine filename
                 parsed = urlparse(url)
                 filename = Path(parsed.path).name
                 if not filename or '.' not in filename:
                     filename = f"{resource_type}_{hashlib.md5(url.encode()).hexdigest()[:8]}.{resource_type}"
                 
-                # Sanitize filename
                 filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
                 if resource_type == 'css' and not filename.endswith('.css'):
                     filename += '.css'
@@ -747,25 +741,19 @@ class PowerfullWebCloner:
     def clone(self, bypass_method='auto', only_code=True, fix_links=True, deep_extract=True):
         """Main clone function"""
         try:
-            # Create directories
             self.base_path.mkdir(parents=True, exist_ok=True)
             (self.base_path / 'css').mkdir(exist_ok=True)
             (self.base_path / 'js').mkdir(exist_ok=True)
             
-            # Create session
             session = self.create_session(bypass_method)
-            
-            # Fetch main page
             html = self.fetch_with_retry(self.target_url, session)
             
             if not html:
                 return False, "Failed to fetch website. The site might have bot protection or be unreachable."
             
-            # Save main HTML
             html_path = self.base_path / 'index.html'
             with open(html_path, 'w', encoding='utf-8') as f:
                 if fix_links:
-                    # Fix relative links
                     soup = BeautifulSoup(html, 'html.parser')
                     for link in soup.find_all(['link', 'script']):
                         if link.get('href') and 'css' in link.get('href', ''):
@@ -778,16 +766,13 @@ class PowerfullWebCloner:
             self.stats['html'] += 1
             self.files.append({'name': 'index.html', 'path': str(html_path), 'type': 'html'})
             
-            # Extract and download resources
             if deep_extract:
                 resources = self.extract_resources(html, self.target_url)
                 
-                # Download CSS files
-                for css_url in resources['css'][:30]:  # Limit to 30 files
+                for css_url in resources['css'][:30]:
                     self.download_resource(css_url, session, 'css')
                 
-                # Download JS files
-                for js_url in resources['js'][:30]:  # Limit to 30 files
+                for js_url in resources['js'][:30]:
                     self.download_resource(js_url, session, 'js')
             
             total = sum(self.stats.values())
@@ -819,7 +804,6 @@ def clone():
     if not target_url:
         return jsonify({'success': False, 'error': 'URL is required'})
     
-    # Add scheme if missing
     if not target_url.startswith(('http://', 'https://')):
         target_url = 'https://' + target_url
     
@@ -845,29 +829,8 @@ def view_file():
         return jsonify({'content': f'Error reading file: {str(e)}'})
 
 if __name__ == '__main__':
-    # Disable SSL warnings
     import urllib3
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     
-    print("""
-    ╔══════════════════════════════════════════════════════════════════╗
-    ║                                                                  ║
-    ║    ███╗   ██╗██╗██████╗  ██████╗ ██████╗                         ║
-    ║    ████╗  ██║██║██╔══██╗██╔═══██╗██╔══██╗                        ║
-    ║    ██╔██╗ ██║██║██████╔╝██║   ██║██████╔╝                        ║
-    ║    ██║╚██╗██║██║██╔══██╗██║   ██║██╔══██╗                        ║
-    ║    ██║ ╚████║██║██║  ██║╚██████╔╝██████╔╝                        ║
-    ║    ╚═╝  ╚═══╝╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═════╝                         ║
-    ║                                                                  ║
-    ║              ⚡ POWERFULL BOT BYPASS EDITION ⚡                   ║
-    ║                                                                  ║
-    ║         🚀 SERVER: http://localhost:5000                        ║
-    ║         📱 MOBILE: http://YOUR_IP:5000                          ║
-    ║                                                                  ║
-    ║         ✅ READY TO CLONE ANY WEBSITE                           ║
-    ║         🔥 BOT BYPASS ACTIVE                                    ║
-    ║                                                                  ║
-    ╚══════════════════════════════════════════════════════════════════╝
-    """)
-    
-    app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
